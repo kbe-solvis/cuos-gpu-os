@@ -1,4 +1,4 @@
-# solvis-llm-os
+# cuos-gpu-os
 
 A CuOS system image with NVIDIA GPU support baked in, for the Hetzner GEX44
 (RTX 4000 SFF Ada) that [`solvis-llm-system`](../solvis-llm-system) runs on.
@@ -51,17 +51,25 @@ mismatch), check the current `nvidia-driver` version for Debian trixie at
 
 ## Building and publishing
 
+Pushing a tag matching `v*` (or running the *Build and publish image* workflow
+manually) builds `system/Dockerfile` and publishes it to
+`ghcr.io/kbe-solvis/cuos-gpu-os` — see
+[`.github/workflows/build.yml`](.github/workflows/build.yml). The resulting
+digest is printed in the workflow run's summary.
+
+To build and publish locally instead:
+
 ```sh
-docker build -t ghcr.io/<you>/solvis-llm-os:v0.6.1-gpu1 -f system/Dockerfile system/
-docker push ghcr.io/<you>/solvis-llm-os:v0.6.1-gpu1
-docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/<you>/solvis-llm-os:v0.6.1-gpu1
+docker build -t ghcr.io/kbe-solvis/cuos-gpu-os:v0.6.1-gpu1 -f system/Dockerfile system/
+docker push ghcr.io/kbe-solvis/cuos-gpu-os:v0.6.1-gpu1
+docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/kbe-solvis/cuos-gpu-os:v0.6.1-gpu1
 ```
 
 Then in `solvis-llm-system/system.json`, point at what you published:
 
 ```json
 {
-  "os_image": "ghcr.io/<you>/solvis-llm-os",
+  "os_image": "ghcr.io/kbe-solvis/cuos-gpu-os",
   "os_image_version": "v0.6.1-gpu1",
   "os_image_digest": "sha256:..."
 }

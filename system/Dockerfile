@@ -12,8 +12,9 @@
 # needed once the .ko files exist. The final stage installs only the runtime
 # pieces and copies the already-built modules over.
 #
-# UNVERIFIED: this has not been build- or boot-tested on real GEX44 hardware.
-# After the first boot, check `nvidia-smi` and `dmesg | grep -i nvidia`.
+# Verified on the real GEX44: nvidia-smi and the docker runtime registration
+# both need help surviving a real boot that cuos-init's configure_docker()
+# controls -- see gpu-setup.sh/.service below for why and what they patch up.
 
 FROM ghcr.io/cuos-dev/cuos-system:v0.6.1 AS builder
 ENV DEBIAN_FRONTEND=noninteractive
@@ -79,7 +80,13 @@ RUN KVER="$(ls /lib/modules)" \
   && update-initramfs -u -k "${KVER}"
 
 # NVIDIA Container Toolkit: registers the "nvidia" OCI runtime with dockerd so
-# a container can be given GPU access.
+# a container can be given GPU access. This registration only affects the
+# daemon.json baked into *this image layer* -- cuos-init overwrites the real
+# /etc/docker/daemon.json from scratch on every boot (configure_docker() in
+# cuos-dev/cuos's system/cuos/init.sh), so it doesn't survive a real boot on
+# its own. gpu-setup.service (below) redoes it after cuos-init and before
+# dockerd starts, which is what actually matters at runtime; this build-time
+# run just keeps the image usable standalone (e.g. `docker run` outside CuOS).
 RUN curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
       | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \
   && curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
@@ -89,3 +96,12 @@ RUN curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
       nvidia-container-toolkit \
   && apt-get clean && rm -rf /var/lib/apt/lists/* \
   && nvidia-ctk runtime configure --runtime=docker --config=/etc/docker/daemon.json
+
+# Boot-time fixups cuos-init and the driver/toolkit packages don't cover on
+# their own -- see gpu-setup.sh for the two reasons why. Installed the same
+# way cuos-dev/cuos's own install.sh wires up cuos-init.service: symlink into
+# /etc/systemd/system, then enable.
+COPY gpu-setup.sh gpu-setup.service /usr/local/cuos/
+RUN chmod +x /usr/local/cuos/gpu-setup.sh \
+  && ln -sf /usr/local/cuos/gpu-setup.service /etc/systemd/system/gpu-setup.service \
+  && systemctl enable gpu-setup.service

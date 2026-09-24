@@ -1,0 +1,13 @@
+[Unit]
+Description=NVIDIA GPU: load nvidia-uvm, create device nodes, register docker runtime
+DefaultDependencies=no
+After=cuos-init.service
+Before=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/cuos/gpu-setup.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=local-fs-pre.target

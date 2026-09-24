@@ -23,26 +23,34 @@ files over — no compiler, dkms or headers in the shipped image. 731 MB base �
 1.14 GB (a single-stage build with the full `nvidia-driver` metapackage,
 including Xorg/GLX/VDPAU this headless box doesn't need, came to 1.83 GB).
 
-Checked in this build environment (no GPU here, so this is as far as it goes):
+Boot-tested on the real GEX44. `nvidia-smi` and `nvidia`/`nvidia-drm`/
+`nvidia-modeset` all come up fine on their own, but two things needed an
+explicit fixup — both handled by [`gpu-setup.sh`](system/gpu-setup.sh), run by
+`gpu-setup.service` between `cuos-init.service` and `docker.service`:
 
-- `nvidia` runtime registered in `/etc/docker/daemon.json`
-- driver packages configure cleanly, dkms builds and signs all five kernel
-  modules (`nvidia`, `nvidia-drm`, `nvidia-modeset`, `nvidia-uvm`,
-  `nvidia-peermem`) for `6.12.107+deb13-amd64`, and they survive the copy into
-  the final stage
-- `nvidia-smi`'s shared library dependencies all resolve (`ldd`)
-- **`nvidia-support` does not blacklist `nouveau`** despite the kernel
-  shipping `nouveau.ko` — without a blacklist it can bind the card first and
-  keep the proprietary driver from loading at all. Added explicitly
-  (`/etc/modprobe.d/nvidia-blacklist-nouveau.conf`, baked into the initrd).
+- **`nvidia-uvm` doesn't load under its expected name.** `nvidia-kernel-dkms`
+  (which sets up the `nvidia-uvm` → real-module modprobe alias) only exists in
+  the builder stage; the final image only has the `.ko` files, under their
+  Debian-alternatives name (`nvidia-current-uvm`). Without it loaded, CUDA
+  fails with `ggml_cuda_init: failed to initialize CUDA: unknown error` even
+  though `nvidia-smi` works fine (it doesn't need uvm).
+- **`/dev/nvidia-uvm[-tools]` don't get created.** This image ships no
+  `nvidia-modprobe` helper, so nothing creates them after the module loads;
+  `gpu-setup.sh` does it from `/proc/devices` (the major number is assigned
+  dynamically per boot, not fixed).
+- **`/etc/docker/daemon.json`'s `nvidia` runtime doesn't survive a boot.**
+  `cuos-init`'s `configure_docker()` (in cuos-dev/cuos's `init.sh`)
+  regenerates that file from scratch on every boot, wiping whatever
+  `nvidia-ctk runtime configure` wrote into the image at build time.
+  `gpu-setup.sh` reapplies it at boot, after cuos-init and before dockerd
+  starts.
 
-What's still unverified: whether the module actually loads against the real
-RTX 4000 SFF Ada and whether a container gets the GPU through the toolkit end
-to end. Check on first boot:
+Verify on a fresh boot:
 
 - `nvidia-smi` shows the GPU
-- `dmesg | grep -i nvidia` has no module load errors
-- `docker info | grep -i runtime` lists `nvidia`
+- `systemctl status gpu-setup.service` succeeded
+- `ls /dev/nvidia-uvm*` shows both device nodes
+- `docker info | grep -i runtime` lists `nvidia` as the default
 - a test container actually gets the GPU: `docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu24.04 nvidia-smi`
 
 If the dkms build fails during `docker build` (kernel headers/driver series

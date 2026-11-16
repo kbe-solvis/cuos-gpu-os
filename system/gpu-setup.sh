@@ -21,8 +21,9 @@
 # cuos-init has written the file and before dockerd reads it.
 set -e
 
-UVM_MODULE="nvidia-current-uvm"
-modprobe "${UVM_MODULE}"
+# NVIDIA's own packages install the module as plain "nvidia-uvm" (the old
+# Debian 550 packages renamed it to "nvidia-current-uvm" via alternatives).
+modprobe nvidia-uvm || modprobe nvidia-current-uvm
 
 UVM_MAJOR="$(awk '$2 == "nvidia-uvm" { print $1 }' /proc/devices)"
 if [ -n "${UVM_MAJOR}" ]; then

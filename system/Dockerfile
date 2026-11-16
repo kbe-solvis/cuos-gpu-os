@@ -26,19 +26,30 @@ ENV DEBIAN_FRONTEND=noninteractive
 # subvolume mount hides them again at runtime, same as on a stock image.
 RUN mkdir -p /data/log/apt /data/dhcp /data/docker /data/containerd /data/root
 
-# nvidia-kernel-dkms lives in "non-free"; "non-free-firmware" is already
-# enabled by the base image (for the CPU microcode packages).
-RUN sed -i 's/^Components: main non-free-firmware$/Components: main contrib non-free non-free-firmware/' \
-      /etc/apt/sources.list.d/debian.sources
+# NVIDIA's own apt repo: Debian trixie (and trixie-backports) only carry the
+# 550 driver series, which does not support Blackwell GPUs (e.g. RTX PRO 6000,
+# PCI ID 10de:2bb4). Blackwell needs >= 570 AND the open kernel modules.
+ARG NVIDIA_DRIVER_VERSION=595.112.07-1
+RUN apt-get update && apt-get install --no-install-recommends -y ca-certificates curl \
+  && curl -fsSLo /tmp/cuda-keyring.deb \
+       https://developer.download.nvidia.com/compute/cuda/repos/debian13/x86_64/cuda-keyring_1.1-1_all.deb \
+  && dpkg -i /tmp/cuda-keyring.deb && rm /tmp/cuda-keyring.deb \
+  && printf 'Package: nvidia-* libnvidia-* libnv* libcuda* firmware-nvidia-gsp\nPin: version %s\nPin-Priority: 1001\n' "${NVIDIA_DRIVER_VERSION}" \
+       > /etc/apt/preferences.d/nvidia-driver \
+  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Only what's needed to compile the module -- not the nvidia-driver
 # metapackage, which also pulls Xorg/GLX/VDPAU packages this headless box has
 # no use for.
-RUN apt-get update && apt-get install --no-install-recommends -y \
-      linux-headers-amd64 \
+# Headers for exactly the kernel the base image ships (not "linux-headers-amd64",
+# which pulls the newest kernel in the archive -- the modules would then be built
+# for a kernel the system does not boot).
+RUN KVER="$(ls /lib/modules)" && apt-get update && apt-get install --no-install-recommends -y \
+      "linux-headers-${KVER}" \
       build-essential \
       dkms \
-      nvidia-kernel-dkms \
+      nvidia-kernel-open-dkms \
+      firmware-nvidia-gsp \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 
@@ -47,20 +58,30 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN mkdir -p /data/log/apt /data/dhcp /data/docker /data/containerd /data/root
 
-RUN sed -i 's/^Components: main non-free-firmware$/Components: main contrib non-free non-free-firmware/' \
-      /etc/apt/sources.list.d/debian.sources
+# NVIDIA's own apt repo: Debian trixie (and trixie-backports) only carry the
+# 550 driver series, which does not support Blackwell GPUs (e.g. RTX PRO 6000,
+# PCI ID 10de:2bb4). Blackwell needs >= 570 AND the open kernel modules.
+ARG NVIDIA_DRIVER_VERSION=595.112.07-1
+RUN apt-get update && apt-get install --no-install-recommends -y ca-certificates curl \
+  && curl -fsSLo /tmp/cuda-keyring.deb \
+       https://developer.download.nvidia.com/compute/cuda/repos/debian13/x86_64/cuda-keyring_1.1-1_all.deb \
+  && dpkg -i /tmp/cuda-keyring.deb && rm /tmp/cuda-keyring.deb \
+  && printf 'Package: nvidia-* libnvidia-* libnv* libcuda* firmware-nvidia-gsp\nPin: version %s\nPin-Priority: 1001\n' "${NVIDIA_DRIVER_VERSION}" \
+       > /etc/apt/preferences.d/nvidia-driver \
+  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Runtime-only packages: the userspace driver bits nvidia-smi needs
+# Runtime-only packages (NVIDIA's repo: nvidia-smi is only a dummy package there,
+# the binary ships in nvidia-driver-cuda): the userspace driver bits nvidia-smi needs
 # (nvidia-alternative, libnvidia-ml1), the GSP firmware blob Ada Lovelace
 # cards (RTX 4000 SFF Ada) need to initialise, and nvidia-support for the
 # nouveau blacklist -- without it the in-kernel open-source driver can grab
 # the card before the proprietary one does. No gcc/dkms/headers here.
 RUN apt-get update && apt-get install --no-install-recommends -y \
       gnupg \
-      nvidia-alternative \
       libnvidia-ml1 \
-      nvidia-smi \
-      nvidia-support \
+      libcuda1 \
+      nvidia-driver-cuda \
+      nvidia-modprobe \
       firmware-nvidia-gsp \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 

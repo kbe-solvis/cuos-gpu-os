@@ -13,6 +13,14 @@ No custom updater image is needed: the kernel and boot chain are untouched
 `ghcr.io/cuos-dev/cuos-updater` from `cuos-release`'s `release.json` is used
 as-is.
 
+## Driver
+
+NVIDIA's open kernel modules (`nvidia-kernel-open-dkms`) from NVIDIA's own
+Debian 13 apt repo, pinned to one version via `NVIDIA_DRIVER_VERSION` in the
+Dockerfile (Debian's own 550 series does not support Blackwell GPUs such as the
+RTX PRO 6000). Headers are installed for the exact kernel the base image ships.
+Since v0.6.1-gpu3; `v0.6.1-gpu2` (Debian 550, closed modules) stays published.
+
 ## Status
 
 Two-stage build: `builder` compiles the driver via dkms (needs
